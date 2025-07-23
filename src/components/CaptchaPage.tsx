@@ -8,7 +8,7 @@ export const CaptchaPage: React.FC<{ onVerified: () => void }> = ({ onVerified }
 
   const verifyToken = async (token: string) => {
     try {
-      const response = await fetch('http://localhost:5000/verify-captcha', {
+      const response = await fetch('http://localhost:3001/verify-captcha', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

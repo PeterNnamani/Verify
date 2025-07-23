@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { CaptchaPage } from './components/CaptchaPage';
+import { ManualCaptcha } from './components/ManualCaptcha';
 import { RegistrationPage } from './components/RegistrationPage';
 
 const App: React.FC = () => {
@@ -9,7 +9,7 @@ const App: React.FC = () => {
   return (
     <div className="app-root">
       {!verified ? (
-        <CaptchaPage onVerified={() => setVerified(true)} />
+        <ManualCaptcha onVerified={() => setVerified(true)} />
       ) : (
         <RegistrationPage />
       )}

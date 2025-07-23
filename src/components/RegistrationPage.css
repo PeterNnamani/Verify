@@ -36,16 +36,16 @@
 .modal-close {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
-  background: #1a73e8;
+  background: #fff;
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: alias;
   font-size: 1rem;
 }
 
 .modal-close:hover {
-  background: #1557b0;
+  background: #fff;
 }
 
 /* Verification complete styles */

