@@ -6,12 +6,26 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: '../.env' });
 
+
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 const app = express();
 const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from the frontend build (dist) in production
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
+app.use(express.static(distPath));
+// SPA fallback: serve index.html for any unknown route
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
 
 // POST /api/send-email - send registration info to email
 app.post('/api/send-email', async (req, res) => {

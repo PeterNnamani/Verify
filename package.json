@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/server.js",
+     "postinstall": "chmod +x node_modules/.bin/vite"
   },
   "dependencies": {
     "@types/node": "^24.0.15",
